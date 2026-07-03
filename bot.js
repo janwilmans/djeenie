@@ -20,13 +20,49 @@ const minecraftData = require("minecraft-data");
 //[16:45:36 ERROR]: Username 'Jeenie5490' tried to join with an invalid session
 //[16:45:36 INFO]: Jeenie5490 (/37.251.123.192:1477) lost connection: Failed to verify username!
 
-const bot = mineflayer.createBot({
-    host: "jannetje19k.aternos.me",
-    port: 32923,
-    auth: "microsoft",
-    username: "aternosriverside@gmail.com",
-});
+function createBot() {
+    const bot = mineflayer.createBot({
+        host: "jannetje19k.aternos.me",
+        port: 32923,
+        auth: "microsoft",
+        username: "aternosriverside@gmail.com",
+    });
 
+    bot.loadPlugin(pathfinder);
+
+    bot.once("spawn", () => {
+        reconnectAttempts = 0;
+        console.log("Spawned!");
+        bot.chat("I am back online!");
+    });
+
+    bot.on("error", (err) => {
+        console.log("Error:", err.code || err);
+    });
+
+    bot.on("end", () => {
+        console.log("Disconnected... retrying");
+
+        if (reconnectAttempts >= MAX_RECONNECTS) {
+            console.log("Max reconnect attempts reached.");
+            return;
+        }
+
+        reconnectAttempts++;
+
+        const delay = Math.min(30000, 2000 * reconnectAttempts);
+
+        console.log(`Reconnecting in ${delay / 1000}s...`);
+
+        setTimeout(() => {
+            createBot();
+        }, delay);
+    });
+
+    return bot;
+}
+
+const bot = createBot();
 bot.loadPlugin(pathfinder);
 
 bot.on("login", () => {
@@ -40,7 +76,7 @@ function hasIronSword() {
 
 bot.on("spawn", () => {
     console.log("Spawned!");
-    bot.chat("Hello from Djeenie!");
+    bot.chat("Djeenie Wish Bot reporting for duty!");
 
     const mcData = minecraftData(bot.version);
     const defaultMovements = new Movements(bot, mcData);
@@ -63,8 +99,21 @@ bot.on("error", (err) => {
     console.error("Error:", err);
 });
 
-bot.on("end", (reason) => {
-    console.log("Disconnected:", reason);
+bot.on("end", () => {
+    console.log("Disconnected... retrying");
+
+    if (reconnectAttempts >= MAX_RECONNECTS) {
+        console.log("Max reconnect attempts reached.");
+        return;
+    }
+
+    reconnectAttempts++;
+
+    const delay = Math.min(30000, 2000 * reconnectAttempts);
+
+    console.log(`Reconnecting in ${delay / 1000}s...`);
+
+    setTimeout(() => { createBot(); }, delay);
 });
 
 const weapons = [
@@ -149,7 +198,7 @@ bot.on("chat", (username, message) => {
     }
 
     if (message.toLowerCase() === "die") {
-        return;
+        process.exit(0);
     }
 });
 
@@ -195,6 +244,8 @@ function doWish(username, message) {
 
     // Parse: wish <item>
     const parts = message.trim().split(/\s+/);
+
+    console.log(parts);
 
     if (parts.length < 2) {
         bot.chat(`Usage: wish <item>`);
