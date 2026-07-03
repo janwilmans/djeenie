@@ -1,282 +1,337 @@
 const mineflayer = require("mineflayer");
-
 const { pathfinder, Movements, goals } = require("mineflayer-pathfinder");
 const minecraftData = require("minecraft-data");
 
-// https://www.minecraftskins.com/skin/24157083/-what-s-real-what-s-fake-/
+function isSameDay(timestampA, timestampB) {
+    const a = new Date(timestampA).toDateString();
+    const b = new Date(timestampB).toDateString();
+    return a === b;
+}
 
+function getTimeUntilTomorrow(now) {
+    const d = new Date(now);
+    const tomorrow = new Date(d);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    return tomorrow.getTime() - now;
+}
 
-// Profile
-// Jeenie5490
-// aternosriverside@gmail.com
-// bedrock port: 40438
-//  riverside5.aternos.me, poort:  40438 versie: 26.2
+class DjeenieBot {
+    constructor(options) {
+        this.options = options;
 
-// /gamerule sendCommandFeedback false
-// /gamerule random_tick_speed 20
-// host: 'riverside5.aternos.me',
+        this.bot = null;
+        this.mcData = null;
 
-// with port 32923:
-//[16:45:36 ERROR]: Username 'Jeenie5490' tried to join with an invalid session
-//[16:45:36 INFO]: Jeenie5490 (/37.251.123.192:1477) lost connection: Failed to verify username!
+        this.lastWish = new Map();
+        this.WISH_TIME = 60 * 1000;
 
-function createBot() {
-    const bot = mineflayer.createBot({
-        host: "jannetje19k.aternos.me",
-        port: 32923,
-        auth: "microsoft",
-        username: "aternosriverside@gmail.com",
-    });
+        this.reconnectAttempts = 0;
+        this.MAX_RECONNECTS = 10;
 
-    bot.loadPlugin(pathfinder);
+        this.banned = [
+            "command_block",
+            "chain_command_block",
+            "repeating_command_block",
+            "command_block_minecart",
+            "structure_block",
+            "structure_void",
+            "jigsaw",
+            "debug_stick",
+            "bedrock",
+            "barrier",
+            "light",
+            "allay_spawn_egg",
+            "ender_dragon_spawn_egg",
+            "wither_spawn_egg",
+            "end_crystal",
+            "nether",
+            "diamond",
+            "token",
+            "mace",
+            "wither"
+        ];
+    }
 
-    bot.once("spawn", () => {
-        reconnectAttempts = 0;
-        console.log("Spawned!");
-        bot.chat("I am back online!");
-    });
+    start() {
+        this.attackerHits = new Map();
+        this.bot = mineflayer.createBot(this.options);
+        this.bot.loadPlugin(pathfinder);
 
-    bot.on("error", (err) => {
-        console.log("Error:", err.code || err);
-    });
+        this.registerEvents();
+        return this.bot;
+    }
 
-    bot.on("end", () => {
+    registerHit(attacker) {
+        if (!attacker) return;
+
+        const name = attacker.username || attacker.name;
+        if (!name) return;
+
+        const count = this.attackerHits.get(name) || 0;
+        this.attackerHits.set(name, count + 1);
+
+        return this.attackerHits.get(name);
+    }
+
+    registerEvents() {
+        this.bot.on("login", () => {
+            console.log("Logged in");
+        });
+
+        this.bot.once("spawn", () => {
+            console.log("Spawned!");
+            this.reconnectAttempts = 0;
+
+            this.mcData = minecraftData(this.bot.version);
+
+            const movements = new Movements(this.bot, this.mcData);
+            movements.allow1by1towers = false;
+            movements.canDig = false;
+            movements.allowParkour = true;
+            movements.allowSprinting = true;
+
+            this.bot.pathfinder.setMovements(movements);
+
+            this.bot.chat("Djeenie Wish Bot reporting for duty!");
+        });
+
+        this.bot.on("chat", (username, message) => {
+            if (username === this.bot.username) return;
+            this.handleChat(username, message);
+        });
+
+        this.bot.on("kicked", (r) => console.log("KICKED:", r));
+        this.bot.on("error", (e) => console.log("ERROR:", e));
+
+        this.bot.on("end", () => this.handleReconnect());
+
+        this.bot.on("death", () => {
+            const killer = this.bot.entity?.killer?.username;
+            this.bot.chat(`Divine intervention triggered by ${killer}! *Poef* `);
+            this.bot.chat(`/kill ${killer}`);
+        });
+
+        this.bot.on("entityHurt", (entity) => {
+            if (entity !== this.bot.entity) return;
+
+            const attacker = this.bot.nearestEntity(e =>
+                e.type === "player" &&
+                e.position.distanceTo(this.bot.entity.position) < 6
+            );
+
+            if (attacker) {
+                const name = attacker.username || attacker.name;
+                this.registerHit(attacker);
+                this.handleAttackerPunishment(name);
+            }
+        });
+    }
+
+    handleAttackerPunishment(username) {
+        const hits = this.attackerHits.get(username) || 0;
+
+        if (hits === 1) {
+            this.bot.chat(`Auw, ${username} do not hurt me!`);
+        }
+
+        if (hits === 2) {
+            this.bot.chat(`${username}, stop that, I recommend to not do that again!`);
+        }
+
+        if (hits >= 3) {
+            this.bot.chat(`${username} was sent to sleep with the fishes.`);
+            this.bot.chat(`/kill ${username}`);
+            this.attackerHits.delete(username); // reset cycle
+        }
+    }
+
+    handleReconnect() {
         console.log("Disconnected... retrying");
 
-        if (reconnectAttempts >= MAX_RECONNECTS) {
+        if (this.reconnectAttempts >= this.MAX_RECONNECTS) {
             console.log("Max reconnect attempts reached.");
             return;
         }
 
-        reconnectAttempts++;
+        this.reconnectAttempts++;
 
-        const delay = Math.min(30000, 2000 * reconnectAttempts);
-
+        const delay = Math.min(30000, 2000 * this.reconnectAttempts);
         console.log(`Reconnecting in ${delay / 1000}s...`);
 
         setTimeout(() => {
-            createBot();
+            this.start();
         }, delay);
-    });
-
-    return bot;
-}
-
-const bot = createBot();
-bot.loadPlugin(pathfinder);
-
-bot.on("login", () => {
-    console.log("Logged in");
-});
-
-function hasIronSword() {
-    const item = bot.inventory.items().find((i) => i.name === "iron_sword");
-    return !!item;
-}
-
-bot.on("spawn", () => {
-    console.log("Spawned!");
-    bot.chat("Djeenie Wish Bot reporting for duty!");
-
-    const mcData = minecraftData(bot.version);
-    const defaultMovements = new Movements(bot, mcData);
-    defaultMovements.allow1by1towers = false;
-    defaultMovements.canDig = false;
-    defaultMovements.allowParkour = true;
-    defaultMovements.allowSprinting = true;
-    defaultMovements.allowParkour = true;
-    bot.pathfinder.setMovements(defaultMovements);
-
-    setTimeout(() => {
-        if (!hasIronSword()) {
-            bot.chat("I do not have an iron sword. Getting one...");
-            bot.chat("/give @s minecraft:iron_sword 1");
-        }
-    }, 10000);
-});
-
-bot.on("error", (err) => {
-    console.error("Error:", err);
-});
-
-bot.on("end", () => {
-    console.log("Disconnected... retrying");
-
-    if (reconnectAttempts >= MAX_RECONNECTS) {
-        console.log("Max reconnect attempts reached.");
-        return;
     }
 
-    reconnectAttempts++;
+    handleChat(username, message) {
+        const msg = message.toLowerCase();
 
-    const delay = Math.min(30000, 2000 * reconnectAttempts);
+        if (msg === "walk") return this.walk();
+        if (msg === "come") return this.come(username);
+        if (msg === "follow") return this.follow(username);
+        if (msg === "stop") return this.stop();
 
-    console.log(`Reconnecting in ${delay / 1000}s...`);
+        if (msg.startsWith("wish")) {
+            return this.doWishCommand(username, message);
+        }
 
-    setTimeout(() => { createBot(); }, delay);
-});
+        if (msg === "die") {
+            this.bot.chat(`ARRRGGHh I'm hit (killed by ${username}) I'll be back!`);
+            this.bot.chat(`/kill ${username}`);
+            process.exit(0);
+        }
+    }
 
-const weapons = [
-    "minecraft:iron_sword",
-    "minecraft:wooden_sword",
-    "minecraft:stone_sword",
-    "minecraft:arrow",
-    "minecraft:egg",
-    "minecraft:crossbow",
-    "minecraft:iron_axe",
-    "minecraft:stone_axe",
-    "minecraft:wooden_axe",
-];
+    walk() {
+        this.bot.chat("Okay, I am walking!");
+        this.bot.setControlState("forward", true);
 
-function getRandomWeapon() {
-    return weapons[Math.floor(Math.random() * weapons.length)];
-}
-
-const lastWish = new Map();
-const ONE_DAY = 24 * 60 * 60 * 1000;
-const ONE_MINUTE = 60 * 1000;
-
-bot.on("chat", (username, message) => {
-    if (username === bot.username) return;
-
-    if (message.toLowerCase() === "walk") {
-        bot.chat("Okay, I am walking!");
-
-        // Start walking forward
-        bot.setControlState("forward", true);
-
-        // Stop after 5 seconds
         setTimeout(() => {
-            bot.setControlState("forward", false);
-            bot.chat("Done walking.");
+            this.bot.setControlState("forward", false);
+            this.bot.chat("Done walking.");
         }, 5000);
     }
 
-    if (message.toLowerCase() === "come") {
-        const player = bot.players[username];
+    come(username) {
+        const player = this.bot.players[username];
+        if (!player?.entity) return this.bot.chat("I can't see you.");
 
-        if (!player || !player.entity) {
-            bot.chat("I can't see you.");
-            return;
-        }
+        this.bot.chat(`Coming to you, ${username}!`);
 
-        bot.chat(`Coming to you, ${username}!`);
-
-        bot.pathfinder.setGoal(
+        this.bot.pathfinder.setGoal(
             new goals.GoalNear(
                 player.entity.position.x,
                 player.entity.position.y,
                 player.entity.position.z,
-                1, // stop within 1 block
-            ),
+                1
+            )
         );
     }
 
-    if (message.toLowerCase() === "follow") {
-        const player = bot.players[username];
+    follow(username) {
+        const player = this.bot.players[username];
+        if (!player?.entity) return this.bot.chat("I can't see you.");
 
-        if (!player || !player.entity) {
-            bot.chat("I can't see you.");
+        this.bot.chat(`Following you, ${username}!`);
+
+        this.bot.pathfinder.setGoal(
+            new goals.GoalFollow(player.entity, 2),
+            true
+        );
+    }
+
+    stop() {
+        this.bot.pathfinder.setGoal(null);
+        this.bot.chat("Stopped.");
+    }
+
+    isBannedItem(itemName) {
+        const name = itemName.toLowerCase();
+        return this.banned.some(bad => name.includes(bad));
+    }
+
+    checkWishCooldown(username) {
+        const now = Date.now();
+        const prev = this.lastWish.get(username);
+
+        if (prev && isSameDay(prev, now)) {
+            const remaining = getTimeUntilTomorrow(now);
+            const h = Math.floor(remaining / (60 * 60 * 1000));
+            const m = Math.floor((remaining % (60 * 60 * 1000)) / 60000);
+            const s = Math.floor((remaining % 60000) / 1000);
+            this.bot.chat(`${username}, you already wished today. Try again in ${h}h ${m}m ${s}s.`);
+            return false;
+        }
+        return true;
+    }
+
+    doWishCommand(username, message) {
+        if (!this.checkWishCooldown(username)) return;
+        this.doWish(username, message);
+    }
+
+    doWish(username, message) {
+        if (!this.mcData) {
+            this.bot.chat("Not ready for wishes yet.");
             return;
         }
 
-        bot.chat(`Following you, ${username}!`);
+        const parts = message.toLowerCase().trim().split(/\s+/);
+        if (parts.length < 2) {
+            return this.bot.chat("Usage: wish <item>");
+        }
 
-        bot.pathfinder.setGoal(
-            new goals.GoalFollow(player.entity, 2), // follow within 2 blocks
-            true, // dynamic goal (keeps updating)
-        );
+        const args = parts.slice(1, 5); // accept up to 4 words
+        const searchTerms = args.join(" ");
+
+        // console.log(`searchTerms: "${searchTerms}"`)
+
+        // EXACT MATCH MODE
+        // =========================
+        if (args.length === 1 && args[0].startsWith("minecraft:")) {
+            const exactName = args[0].slice(10);
+            const item = this.mcData.itemsByName[exactName];
+
+            if (!item) {
+                return this.bot.chat(`"${searchTerms}" is not valid.`);
+            }
+
+            return this.fulfillWish(username, searchTerms, item);
+        }
+
+        // =========================
+        // PARTIAL MATCH MODE (ALL WORD MATCH)
+        // =========================
+        const undesirables = ["stone", "wooden"];
+
+        const match = Object.entries(this.mcData.itemsByName)
+            .find(([name]) => {
+                const n = name.toLowerCase();
+
+                // all words must match
+                const allWordsMatch = args.every(word => n.includes(word));
+                if (!allWordsMatch) return false;
+
+                // filter undesirable materials
+                for (const bad of undesirables) {
+                    if (n.includes(bad)) return false;
+                }
+
+                return true;
+            });
+
+        if (!match) {
+            return this.bot.chat(`"${searchTerms}" een beetje gay!`);
+        }
+
+        const item = match[1];
+        return this.fulfillWish(username, searchTerms, item);
     }
 
-    if (message.toLowerCase() === "stop") {
-        bot.pathfinder.setGoal(null);
-        bot.chat("Stopped.");
-    }
+    fulfillWish(username, searchTerms, item) {
 
-    if (message.toLowerCase() === "wish") {
-        doWish(username, message);
-    }
+        if (!item) {
+            return this.bot.chat(`"${searchTerms}" is invalid.`);
+        }
 
-    if (message.toLowerCase() === "die") {
-        process.exit(0);
+        if (this.isBannedItem(item.name)) {
+            return this.bot.chat(`"${searchTerms}" is Evil, OP of niet lief!`);
+        }
+
+        this.lastWish.set(username, Date.now());
+        this.bot.chat(`Your wish has been fulfilled, ${username}!`);
+        this.bot.chat(`/give ${username} minecraft:${item.name} 1`);
     }
+}
+
+// ===== START BOT =====
+
+const bot = new DjeenieBot({
+    host: "jannetje19k.aternos.me",
+    port: 32923,
+    auth: "microsoft",
+    username: "aternosriverside@gmail.com",
 });
 
-const WISH_TIME = ONE_MINUTE;
-
-const banned = [
-    // Operator / admin items
-    "command_block",
-    "chain_command_block",
-    "repeating_command_block",
-    "command_block_minecart",
-    "structure_block",
-    "structure_void",
-    "jigsaw",
-    "debug_stick",
-
-    // Unobtainable blocks
-    "bedrock",
-    "barrier",
-    "light",
-
-    // Spawn eggs (optional)
-    "allay_spawn_egg",
-    "ender_dragon_spawn_egg",
-    "wither_spawn_egg",
-    "end_crystal",
-];
-
-function doWish(username, message) {
-    const now = Date.now();
-    const previous = lastWish.get(username);
-
-    // Cooldown check
-    if (previous && now - previous < WISH_TIME) {
-        const remaining = WISH_TIME - (now - previous);
-
-        const minutes = Math.floor(remaining / (60 * 1000));
-        const seconds = Math.floor((remaining % (60 * 1000)) / 1000);
-
-        bot.chat(`${username}, you must wait ${minutes}m ${seconds}s before wishing again.`,);
-        return;
-    }
-
-    // Parse: wish <item>
-    const parts = message.trim().split(/\s+/);
-
-    console.log(parts);
-
-    if (parts.length < 2) {
-        bot.chat(`Usage: wish <item>`);
-        return;
-    }
-
-    let itemName = parts.slice(1).join("_").toLowerCase();
-    bot.chat(`You wished: ${itemName} `, itemName);
-
-    // Accept both formats:
-    // wish diamond_sword
-    // wish minecraft:diamond_sword
-    if (itemName.startsWith("minecraft:")) {
-        itemName = itemName.substring(10);
-    }
-
-    // Forbidden item check
-    if (banned.includes(itemName)) {
-        bot.chat(`${username}, that item is forbidden and cannot be wished for.`,);
-        return;
-    }
-
-    // Does the item exist?
-    const item = mcData.itemsByName[itemName];
-
-    if (!item) {
-        bot.chat(`Sorry ${username}, "${itemName}" is not a valid item.`); return;
-    }
-
-    // Wish granted
-    lastWish.set(username, now);
-    bot.chat(`Your wish has been fulfilled, ${username}!`);
-    bot.chat(`/give ${username} minecraft:${item.name} 1`);
-}
+bot.start();
