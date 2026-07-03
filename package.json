@@ -1,0 +1,25 @@
+{
+  "name": "djeenie",
+  "version": "1.0.0",
+  "description": "Djeenie is a minecraft wish-bot",
+  "main": "bot.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/janwilmans/djeenie.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/janwilmans/djeenie/issues"
+  },
+  "homepage": "https://github.com/janwilmans/djeenie#readme",
+  "dependencies": {
+    "minecraft-data": "^3.111.0",
+    "mineflayer": "^4.37.1",
+    "mineflayer-pathfinder": "^2.4.5"
+  }
+}
