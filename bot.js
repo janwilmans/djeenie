@@ -2,6 +2,57 @@ const mineflayer = require("mineflayer");
 const { pathfinder, Movements, goals } = require("mineflayer-pathfinder");
 const minecraftData = require("minecraft-data");
 
+const fs = require("fs");
+const path = require("path");
+
+const WISH_DIR = path.join(__dirname, "wishes");
+
+if (!fs.existsSync(WISH_DIR)) {
+    fs.mkdirSync(WISH_DIR);
+}
+
+function getWishFile(uuid) {
+    return path.join(WISH_DIR, `${uuid}.json`);
+}
+
+function loadUserWish(uuid) {
+    try {
+        const file = getWishFile(uuid);
+
+        if (!fs.existsSync(file)) {
+            return null;
+        }
+
+        const data = fs.readFileSync(file, "utf8");
+        return JSON.parse(data);
+    }
+    catch (err) {
+        console.log("loadUserWish error:", err);
+        return null;
+    }
+}
+
+function saveUserWish(uuid, username, timestamp) {
+    try {
+        const file = getWishFile(uuid);
+        const data = {
+            uuid,
+            name: username,
+            lastWish: timestamp
+        };
+
+        fs.writeFileSync(
+            file,
+            JSON.stringify(data, null, 2),
+            "utf8"
+        );
+        console.log(`saved wish: ${file}`)
+    }
+    catch (err) {
+        console.log("saveUserWish error:", err);
+    }
+}
+
 function isSameDay(timestampA, timestampB) {
     const a = new Date(timestampA).toDateString();
     const b = new Date(timestampB).toDateString();
@@ -124,7 +175,14 @@ class DjeenieBot {
                 const name = attacker.username || attacker.name;
                 this.registerHit(attacker);
                 this.handleAttackerPunishment(name);
+                return;
             }
+
+            const mob = this.bot.nearestEntity(e =>
+                (e.type === "mob" || e.type === "hostile") &&
+                e.position.distanceTo(this.bot.entity.position) < 8
+            );
+            this.bot.chat(`/kill @e[type=${mob.name},limit=1,sort=nearest]`);
         });
     }
 
@@ -177,8 +235,8 @@ class DjeenieBot {
         }
 
         if (msg === "die") {
-            this.bot.chat(`ARRRGGHh I'm hit (killed by ${username}) I'll be back!`);
-            this.bot.chat(`/kill ${username}`);
+            this.bot.chat(`AFK, I'll be back soon!`);
+            //this.bot.chat(`/kill ${username}`);
             process.exit(0);
         }
     }
@@ -232,10 +290,17 @@ class DjeenieBot {
     }
 
     checkWishCooldown(username) {
-        const now = Date.now();
-        const prev = this.lastWish.get(username);
 
-        if (prev && isSameDay(prev, now)) {
+        const uuid = this.bot.players[username]?.uuid;
+        console.log(`uuid not available for "${username}"`)
+        if (!uuid) return false;
+
+        const user = loadUserWish(uuid);
+        console.log(`${username} never wished before, uuid ${uuid}`)
+        if (!user) return true;
+
+        const now = Date.now();
+        if (user.lastWish && isSameDay(user.lastWish, now)) {
             const remaining = getTimeUntilTomorrow(now);
             const h = Math.floor(remaining / (60 * 60 * 1000));
             const m = Math.floor((remaining % (60 * 60 * 1000)) / 60000);
@@ -302,7 +367,7 @@ class DjeenieBot {
             });
 
         if (!match) {
-            return this.bot.chat(`"${searchTerms}" een beetje gay!`);
+            return this.bot.chat(`${username} wished for ${searchTerms} ?! (een beetje gay!)`);
         }
 
         const item = match[1];
@@ -310,7 +375,6 @@ class DjeenieBot {
     }
 
     fulfillWish(username, searchTerms, item) {
-
         if (!item) {
             return this.bot.chat(`"${searchTerms}" is invalid.`);
         }
@@ -319,8 +383,14 @@ class DjeenieBot {
             return this.bot.chat(`"${searchTerms}" is Evil, OP of niet lief!`);
         }
 
-        this.lastWish.set(username, Date.now());
-        this.bot.chat(`Your wish has been fulfilled, ${username}!`);
+        const uuid = this.bot.players[username]?.uuid;
+
+        if (!uuid) {
+            return this.bot.chat(`I don't know who ${username} is.`);
+        }
+
+        saveUserWish(uuid, username, Date.now());
+        this.bot.chat(`Your wish is my command, ${username}!`);
         this.bot.chat(`/give ${username} minecraft:${item.name} 1`);
     }
 }
