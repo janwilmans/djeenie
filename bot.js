@@ -6,9 +6,30 @@ const fs = require("fs");
 const path = require("path");
 
 const WISH_DIR = path.join(__dirname, "wishes");
+const LOG_DIR = path.join(__dirname, "logs");
 
-if (!fs.existsSync(WISH_DIR)) {
-    fs.mkdirSync(WISH_DIR);
+function logWish(username, uuid, searchTerms, item) {
+
+    if (!fs.existsSync(LOG_DIR)) {
+        fs.mkdirSync(LOG_DIR, { recursive: true });
+    }
+    try {
+        const file = path.join(LOG_DIR, "wishes.log");
+
+        const timestamp = new Date().toISOString();
+
+        const line =
+            `[${timestamp}] ` +
+            `user="${username}" ` +
+            `uuid="${uuid}" ` +
+            `wish="${searchTerms}" ` +
+            `granted="${item.name}"\n`;
+
+        fs.appendFileSync(file, line, "utf8");
+    }
+    catch (err) {
+        console.log("logWish error:", err);
+    }
 }
 
 function getWishFile(uuid) {
@@ -33,6 +54,10 @@ function loadUserWish(uuid) {
 }
 
 function saveUserWish(uuid, username, timestamp) {
+
+    if (!fs.existsSync(WISH_DIR)) {
+        fs.mkdirSync(WISH_DIR);
+    }
     try {
         const file = getWishFile(uuid);
         const data = {
@@ -390,6 +415,7 @@ class DjeenieBot {
         }
 
         saveUserWish(uuid, username, Date.now());
+        logWish(username, uuid, searchTerms, item);
         this.bot.chat(`Your wish is my command, ${username}!`);
         this.bot.chat(`/give ${username} minecraft:${item.name} 1`);
     }
