@@ -105,6 +105,10 @@ class DjeenieBot {
         this.reconnectAttempts = 0;
         this.MAX_RECONNECTS = 10;
 
+        this.lastPosition = null;
+        this.lastMoveTime = Date.now();
+        this.stuckInterval = null;
+
         this.banned = [
             "command_block",
             "chain_command_block",
@@ -125,7 +129,38 @@ class DjeenieBot {
             "diamond",
             "token",
             "mace",
-            "wither"
+            "wither",
+            "beacon",
+            "chirp",
+            "netherite_sword",
+            "netherite_pickaxe",
+            "netherite_axe",
+            "netherite_armor",
+            "netherite_block",
+            "netherite_ingot",
+            "enchanted_golden_apple",
+            "totem",
+            "totem_of_undying",
+            "elytra",
+            "firework_rocket",
+            "trident",
+            "shulker_box",
+            "shulker_shell",
+            "dragon_egg",
+            "respawn_anchor",
+            "mending_book",
+            "sharpness_5_book",
+            "power_5_book",
+            "protection_4_book",
+            "efficiency_5_book",
+            "sweeping_edge_3_book",
+            "villager_spawn_egg",
+            "creeper_spawn_egg",
+            "ghast_spawn_egg",
+            "warden_spawn_egg",
+            "mob_spawner",
+            "end_portal_frame",
+            "nether_star"
         ];
     }
 
@@ -176,6 +211,7 @@ class DjeenieBot {
             movements.allowSprinting = true;
             movements.maxDropDown = 4;
             movements.allowFreeMotion = true;
+            movements.canPlaceBlocks = true
             this.bot.pathfinder.setMovements(movements);
 
             this.bot.chat("Djeenie Wish Bot reporting for duty!");
@@ -206,10 +242,16 @@ class DjeenieBot {
             }
 
             const mob = this.bot.nearestEntity(e =>
-                (e.type === "mob" || e.type === "hostile") &&
+                e &&
+                e.type === "mob" &&
+                e.position &&
+                this.bot.entity?.position &&
                 e.position.distanceTo(this.bot.entity.position) < 8
             );
-            this.bot.chat(`/kill @e[type=${mob.name},limit=1,sort=nearest]`);
+
+            if (!mob) return;
+            if (!mob.name) return;
+            this.bot.chat(`/kill @e[type=${mob.name},limit=2,sort=nearest]`);
         });
     }
 
@@ -296,7 +338,9 @@ class DjeenieBot {
 
     follow(username) {
         const player = this.bot.players[username];
-        if (!player?.entity) return this.bot.chat("I can't see you.");
+        if (!player?.entity) {
+            return this.bot.chat("I can't see you.");
+        }
 
         this.bot.chat(`Following you, ${username}!`);
 
@@ -423,6 +467,8 @@ class DjeenieBot {
     }
 }
 
+
+// 1.21.8 -> follow works
 // ===== START BOT =====
 
 const bot = new DjeenieBot({
@@ -431,5 +477,13 @@ const bot = new DjeenieBot({
     auth: "microsoft",
     username: "aternosriverside@gmail.com",
 });
+
+// const bot = new DjeenieBot({
+//     host: "riverside5.aternos.me",
+//     port: 40438,
+//     auth: "microsoft",
+//     username: "aternosriverside@gmail.com",
+// });
+
 
 bot.start();
