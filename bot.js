@@ -155,18 +155,27 @@ class DjeenieBot {
             console.log("Logged in");
         });
 
+        // this.bot.on('path_update', (r) => {
+        //     console.log('Path status:', r.status);
+        // });
+
+        // this.bot.on('goal_reached', () => {
+        //     console.log('Goal reached');
+        // });
+
         this.bot.once("spawn", () => {
-            console.log("Spawned!");
+            console.log("Djeenie Spawned!");
             this.reconnectAttempts = 0;
 
             this.mcData = minecraftData(this.bot.version);
 
             const movements = new Movements(this.bot, this.mcData);
-            movements.allow1by1towers = false;
-            movements.canDig = false;
+            movements.canDig = true;
+            movements.allow1by1towers = true;
             movements.allowParkour = true;
             movements.allowSprinting = true;
-
+            movements.maxDropDown = 4;
+            movements.allowFreeMotion = true;
             this.bot.pathfinder.setMovements(movements);
 
             this.bot.chat("Djeenie Wish Bot reporting for duty!");
@@ -179,14 +188,7 @@ class DjeenieBot {
 
         this.bot.on("kicked", (r) => console.log("KICKED:", r));
         this.bot.on("error", (e) => console.log("ERROR:", e));
-
         this.bot.on("end", () => this.handleReconnect());
-
-        this.bot.on("death", () => {
-            const killer = this.bot.entity?.killer?.username;
-            this.bot.chat(`Divine intervention triggered by ${killer}! *Poef* `);
-            this.bot.chat(`/kill ${killer}`);
-        });
 
         this.bot.on("entityHurt", (entity) => {
             if (entity !== this.bot.entity) return;
