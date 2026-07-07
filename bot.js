@@ -32,13 +32,13 @@ function logWish(username, uuid, searchTerms, item) {
     }
 }
 
-function getWishFile(uuid) {
-    return path.join(WISH_DIR, `${uuid}.json`);
+function getWishFile(uuid, username) {
+    return path.join(WISH_DIR, `${uuid}-${username}.json`);
 }
 
-function loadUserWish(uuid) {
+function loadUserWish(uuid, username) {
     try {
-        const file = getWishFile(uuid);
+        const file = getWishFile(uuid, username);
 
         if (!fs.existsSync(file)) {
             return null;
@@ -59,7 +59,7 @@ function saveUserWish(uuid, username, timestamp) {
         fs.mkdirSync(WISH_DIR);
     }
     try {
-        const file = getWishFile(uuid);
+        const file = getWishFile(uuid, username);
         const data = {
             uuid,
             name: username,
@@ -128,10 +128,10 @@ class DjeenieBot {
             "nether",
             "diamond",
             "token",
+            "core",
             "mace",
             "wither",
             "beacon",
-            "chirp",
             "netherite_sword",
             "netherite_pickaxe",
             "netherite_axe",
@@ -329,6 +329,7 @@ class DjeenieBot {
         if (msg === "come") return this.come(username);
         if (msg === "follow") return this.follow(username);
         if (msg === "stop") return this.stop();
+        if (msg === "list") return this.listPlayers();
 
         if (msg.startsWith("wish")) {
             return this.doWishCommand(username, message);
@@ -381,15 +382,20 @@ class DjeenieBot {
         return this.banned.some(bad => name.includes(bad));
     }
 
+    getPlayerId(username) {
+        const player = this.bot.players[username];
+        const id = player?.uuid || username;
+        return id;
+    }
+
     checkWishCooldown(username) {
 
-        const uuid = this.bot.players[username]?.uuid;
-        console.log(`uuid not available for "${username}"`)
-        if (!uuid) return false;
-
-        const user = loadUserWish(uuid);
-        console.log(`${username} never wished before, uuid ${uuid}`)
-        if (!user) return true;
+        const id = this.getPlayerId(username);
+        const user = loadUserWish(id, username);
+        if (!user) {
+            console.log(`${username} never wished before, id ${id}`);
+            return true;
+        }
 
         const now = Date.now();
         if (user.lastWish && isSameDay(user.lastWish, now)) {
@@ -408,7 +414,12 @@ class DjeenieBot {
         this.doWish(username, message);
     }
 
+    listPlayers() {
+        console.log(this.bot.players);
+    }
+
     doWish(username, message) {
+        console.log(`${username} wished: "${message}"`);
         if (!this.mcData) {
             this.bot.chat("Not ready for wishes yet.");
             return;
@@ -459,7 +470,7 @@ class DjeenieBot {
             });
 
         if (!match) {
-            return this.bot.chat(`${username} wished for ${searchTerms} ?! (een beetje gay!)`);
+            return this.bot.chat(`${username} wished for ${searchTerms} ?! (not sure what that is!)`);
         }
 
         const item = match[1];
@@ -475,14 +486,9 @@ class DjeenieBot {
             return this.bot.chat(`"${searchTerms}" is Evil, OP of niet lief!`);
         }
 
-        const uuid = this.bot.players[username]?.uuid;
-
-        if (!uuid) {
-            return this.bot.chat(`I don't know who ${username} is.`);
-        }
-
-        saveUserWish(uuid, username, Date.now());
-        logWish(username, uuid, searchTerms, item);
+        const id = this.getPlayerId(username);
+        saveUserWish(id, username, Date.now());
+        logWish(username, id, searchTerms, item);
         this.bot.chat(`Your wish is my command, ${username}!`);
         this.bot.chat(`/give ${username} minecraft:${item.name} 1`);
     }
