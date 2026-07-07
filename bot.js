@@ -173,6 +173,16 @@ class DjeenieBot {
         return this.bot;
     }
 
+    resetConnectionState() {
+        this.reconnectAttempts = 0;
+        this.lastPosition = null;
+        this.lastMoveTime = Date.now();
+        if (this.stuckInterval) {
+            clearInterval(this.stuckInterval);
+            this.stuckInterval = null;
+        }
+    }
+
     registerHit(attacker) {
         if (!attacker) return;
 
@@ -201,17 +211,22 @@ class DjeenieBot {
         this.bot.once("spawn", () => {
             console.log("Djeenie Spawned!");
             this.reconnectAttempts = 0;
+            this.resetConnectionState();
 
             this.mcData = minecraftData(this.bot.version);
 
             const movements = new Movements(this.bot, this.mcData);
-            movements.canDig = true;
+            movements.canDig = false;
             movements.allow1by1towers = true;
             movements.allowParkour = true;
             movements.allowSprinting = true;
             movements.maxDropDown = 4;
             movements.allowFreeMotion = true;
             movements.canPlaceBlocks = true
+            movements.canOpenDoors = true;
+            movements.dontCreateFlow = true;
+            movements.dontMineUnderFallingBlock = true;
+            movements.allowEntityDetection = true;
             this.bot.pathfinder.setMovements(movements);
 
             this.bot.chat("Djeenie Wish Bot reporting for duty!");
@@ -222,8 +237,16 @@ class DjeenieBot {
             this.handleChat(username, message);
         });
 
-        this.bot.on("kicked", (r) => console.log("KICKED:", r));
-        this.bot.on("error", (e) => console.log("ERROR:", e));
+        this.bot.on("kicked", (r) => {
+            console.log("KICKED:", r);
+            this.handleReconnect();
+        });
+        this.bot.on("error", (e) => {
+            console.log("ERROR:", e);
+            if (e?.code === 'ECONNRESET' || e?.message?.includes('ECONNRESET')) {
+                this.handleReconnect();
+            }
+        });
         this.bot.on("end", () => this.handleReconnect());
 
         this.bot.on("entityHurt", (entity) => {
@@ -276,17 +299,26 @@ class DjeenieBot {
     handleReconnect() {
         console.log("Disconnected... retrying");
 
-        if (this.reconnectAttempts >= this.MAX_RECONNECTS) {
+        const MAX_RECONNECTS = 3;
+
+        if (this.reconnectAttempts >= MAX_RECONNECTS) {
             console.log("Max reconnect attempts reached.");
             return;
         }
 
         this.reconnectAttempts++;
 
-        const delay = Math.min(30000, 2000 * this.reconnectAttempts);
+        // 2s, 4s, 8s
+        const delay = 2000 * Math.pow(2, this.reconnectAttempts - 1);
+
         console.log(`Reconnecting in ${delay / 1000}s...`);
 
-        setTimeout(() => {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+        }
+
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
             this.start();
         }, delay);
     }
@@ -294,7 +326,6 @@ class DjeenieBot {
     handleChat(username, message) {
         const msg = message.toLowerCase();
 
-        if (msg === "walk") return this.walk();
         if (msg === "come") return this.come(username);
         if (msg === "follow") return this.follow(username);
         if (msg === "stop") return this.stop();
@@ -308,16 +339,6 @@ class DjeenieBot {
             //this.bot.chat(`/kill ${username}`);
             process.exit(0);
         }
-    }
-
-    walk() {
-        this.bot.chat("Okay, I am walking!");
-        this.bot.setControlState("forward", true);
-
-        setTimeout(() => {
-            this.bot.setControlState("forward", false);
-            this.bot.chat("Done walking.");
-        }, 5000);
     }
 
     come(username) {
@@ -468,22 +489,26 @@ class DjeenieBot {
 }
 
 
+// 26.2 -> does not work
+// 1.21.11 -> does not work
+// 1.21.10 -> does not work
 // 1.21.8 -> follow works
 // ===== START BOT =====
 
-const bot = new DjeenieBot({
-    host: "jannetje19k.aternos.me",
-    port: 32923,
-    auth: "microsoft",
-    username: "aternosriverside@gmail.com",
-});
-
 // const bot = new DjeenieBot({
-//     host: "riverside5.aternos.me",
-//     port: 40438,
+//     host: "jannetje19k.aternos.me",
+//     port: 47708,
 //     auth: "microsoft",
 //     username: "aternosriverside@gmail.com",
 // });
+
+const bot = new DjeenieBot({
+    host: "riverside5.aternos.me",
+    port: 40438,
+    auth: "microsoft",
+    username: "aternosriverside@gmail.com",
+    version: "1.21.8",
+});
 
 
 bot.start();
