@@ -183,16 +183,10 @@ class DjeenieBot {
         }
     }
 
-    registerHit(attacker) {
-        if (!attacker) return;
-
-        const name = attacker.username || attacker.name;
-        if (!name) return;
-
-        const count = this.attackerHits.get(name) || 0;
-        this.attackerHits.set(name, count + 1);
-
-        return this.attackerHits.get(name);
+    registerHit(username) {
+        const count = this.attackerHits.get(username) || 0;
+        this.attackerHits.set(username, count + 1);
+        return this.attackerHits.get(username);
     }
 
     registerEvents() {
@@ -241,45 +235,51 @@ class DjeenieBot {
             console.log("KICKED:", r);
             this.handleReconnect();
         });
+
         this.bot.on("error", (e) => {
             console.log("ERROR:", e);
             if (e?.code === 'ECONNRESET' || e?.message?.includes('ECONNRESET')) {
                 this.handleReconnect();
             }
         });
+
         this.bot.on("end", () => this.handleReconnect());
 
         this.bot.on("entityHurt", (entity) => {
             if (entity !== this.bot.entity) return;
 
-            const attacker = this.bot.nearestEntity(e =>
-                e.type === "player" &&
-                e.position.distanceTo(this.bot.entity.position) < 6
+            const skeletonShootingDistance = 16;
+            const hostile = this.bot.nearestEntity(e =>
+                (e.type === "hostile" || e.type === "mob") &&
+                e.position.distanceTo(this.bot.entity.position) < skeletonShootingDistance
             );
 
-            if (attacker) {
-                const name = attacker.username || attacker.name;
-                this.registerHit(attacker);
-                this.handleAttackerPunishment(name);
-                return;
+            if (hostile?.name) {
+                this.bot.chat(`A ${hostile.name} is hurting Djeenie!`);
+                this.bot.chat(`/kill @e[type=${hostile.name},limit=2,sort=nearest]`);
+                return
             }
 
-            const mob = this.bot.nearestEntity(e =>
-                e &&
-                e.type === "mob" &&
-                e.position &&
-                this.bot.entity?.position &&
-                e.position.distanceTo(this.bot.entity.position) < 8
+            const playerStrikingDistance = 4;
+            const player = this.bot.nearestEntity(e =>
+                e.type === "player" &&
+                e.position.distanceTo(this.bot.entity.position) < playerStrikingDistance
             );
 
-            if (!mob) return;
-            if (!mob.name) return;
-            this.bot.chat(`/kill @e[type=${mob.name},limit=2,sort=nearest]`);
+            if (player?.username) {
+                this.registerHit(player.username);
+                this.handleAttackerPunishment(player.username)
+                return
+            }
         });
+
     }
+
 
     handleAttackerPunishment(username) {
         const hits = this.attackerHits.get(username) || 0;
+
+        console.log(hits)
 
         if (hits === 1) {
             this.bot.chat(`Auw, ${username} do not hurt me!`);

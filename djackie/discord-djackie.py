@@ -1,9 +1,41 @@
-import discord
-import subprocess
 import asyncio
+import discord
+import os
+import subprocess
+
+from pathlib import Path
 from discord.ext import commands
 
+
+def load_dotenv(filename=".env"):
+    env_path = Path(__file__).resolve().parent / filename
+
+    try:
+        with env_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line or line.startswith("#"):
+                    continue
+
+                if "=" not in line:
+                    continue
+
+                key, value = line.split("=", 1)
+                value = value.strip().strip('"').strip("'")
+
+                os.environ.setdefault(key.strip(), value)
+
+    except FileNotFoundError:
+        pass
+
+
+load_dotenv()
 TOKEN = os.environ["DISCORD_TOKEN"]
+
+if TOKEN is None:
+    raise RuntimeError(
+        "DISCORD_TOKEN not found (typically its in a .env file)")
 
 MINECRAFT_CHANNEL = 1522621205952331890
 
@@ -49,8 +81,17 @@ async def ping(ctx):
     await ctx.send("Pong!")
 
 
-async def start(ctx):
-    subprocess.Popen(["node", r"C:\project\djeenie-project\djeenie\bot.js"])
+async def watch_process(ctx):
+    global djeenie_process
+
+    returncode = await asyncio.to_thread(djeenie_process.wait)
+
+    await ctx.send("Djeenie died!? Who did that? Use !start to respawn her...")
+
+    print(f"(Djeenie exited with return code {returncode})")
+
+    # Clear the reference so !start works again
+    djeenie_process = None
 
 
 @bot.command(help="Starts Djeenie on rivenside5.")
@@ -68,20 +109,7 @@ async def start(ctx):
     )
 
     await ctx.send("Spawning a new Djeenie on rivenside5.aternos.nu, port 40438!")
-
-    async def watch_process():
-        global djeenie_process
-
-        returncode = await asyncio.to_thread(djeenie_process.wait)
-
-        await ctx.send("Djeenie died!? Who did that? Use !start to respawn her...")
-
-        print(f"(Djeenie exited with return code {returncode})")
-
-        # Clear the reference so !start works again
-        djeenie_process = None
-
-    asyncio.create_task(watch_process())
+    asyncio.create_task(watch_process(ctx))
 
 
 @bot.command()
