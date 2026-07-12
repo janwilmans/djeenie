@@ -121,9 +121,6 @@ class DjeenieBot {
         this.bot = null;
         this.mcData = null;
 
-        this.lastWish = new Map();
-        this.WISH_TIME = 60 * 1000;
-
         this.reconnectAttempts = 0;
         this.MAX_RECONNECTS = 10;
 
@@ -253,8 +250,13 @@ class DjeenieBot {
             this.handleChat(username, message);
         });
 
-        this.bot.on("kicked", (r) => {
-            console.log("KICKED:", r);
+        this.bot.on("kicked", (reason) => {
+            if (reason.includes("Outdated")) {
+                console.log(`KICKED: ${reason}, Install the ViaBackwards plugin to support older clients on newer server versions.`);
+            }
+            else {
+                console.log(`KICKED: ${reason}`);
+            }
             this.handleReconnect();
         });
 
@@ -292,6 +294,38 @@ class DjeenieBot {
                 this.registerHit(player.username);
                 this.handleAttackerPunishment(player.username)
                 return
+            }
+        });
+
+        const MAX_DISTANCE = 15; // Adjust this value based on your need
+
+        this.bot.on("physicsTick", () => {
+            if (!this.isFollowing()) {
+                return;
+            }
+
+            const playerPos = this.bot.pathfinder.goal?.entity?.position;
+            if (!playerPos) return;
+
+            const botPos = this.bot.entity.position;
+            const distance = playerPos.distanceTo(botPos);
+            if (distance > MAX_DISTANCE) {
+                // Direction from player -> bot
+                let dx = botPos.x - playerPos.x;
+                let dz = botPos.z - playerPos.z;
+
+                const len = Math.sqrt(dx * dx + dz * dz);
+
+                // If we're exactly on top of the player, choose an arbitrary direction.
+                if (len < 0.001) {
+                    dx = 1;
+                    dz = 0;
+                } else {
+                    dx /= len;
+                    dz /= len;
+                }
+
+                this.bot.chat(`/tp @s ${playerPos.x + dx * 2} ${playerPos.y} ${playerPos.z + dz * 2}`);
             }
         });
 
@@ -348,8 +382,15 @@ class DjeenieBot {
 
         if (msg === "come") return this.come(username);
         if (msg === "follow") return this.follow(username);
+        if (msg === "sleep") return this.sleep(username);
         if (msg === "stop") return this.stop();
         if (msg === "list") return this.listPlayers();
+        if (msg === "tp") return this.tp(username, "");
+
+        if (msg.startsWith("tp ")) {
+            this.tp(username, msg.slice(3));
+            return
+        }
 
         if (msg.startsWith("wish")) {
             return this.doWishCommand(username, message);
@@ -378,6 +419,11 @@ class DjeenieBot {
         );
     }
 
+    isFollowing() {
+        return this.bot.pathfinder.goal instanceof goals.GoalFollow &&
+            this.bot.pathfinder.isMoving();
+    }
+
     follow(username) {
         const player = this.bot.players[username];
         if (!player?.entity) {
@@ -395,6 +441,17 @@ class DjeenieBot {
     stop() {
         this.bot.pathfinder.setGoal(null);
         this.bot.chat("Stopped.");
+    }
+
+    sleep(username) {
+        console.log(`Djeenie sets day-time because ${username} asked`);
+        this.bot.chat(`OK ${username} I will sleep now!`);
+        this.bot.chat(`/time set minecraft:day`);
+    }
+
+    tp(username, coordinates) {
+        console.log(`Djeenie was asked to tp ${username} to ${coordinates}`);
+        this.bot.chat(`/tp ${username} ${this.bot.username}`);
     }
 
     isBannedItem(itemName) {
@@ -500,13 +557,13 @@ class DjeenieBot {
             return this.bot.chat(`"${searchTerms}" is Evil, OP of niet lief!`);
         }
 
-        console.log(`${username} received with "${item.name}" based on "${searchTerms}"`)
+        console.log(`${username} received "${item.name}" based on "${searchTerms}"`)
 
         const player = new Player(this.bot, username);
         saveUserWish(player, Date.now());
         logWish(player, searchTerms, item);
         this.bot.chat(`Your wish is my command, ${username}!`);
-        this.bot.chat(`/give ${username} minecraft: ${item.name} 1`);
+        this.bot.chat(`/give ${username} minecraft:${item.name} 1`);
     }
 }
 
